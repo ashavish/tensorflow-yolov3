@@ -8,7 +8,7 @@ Based on YOLOV3 implementation by YunYang1994. And Loss function inspired by htt
 ```bashrc
 $ git clone https://github.com/ashavish/tensorflow-yolov3.git
 ```
-2.  You are supposed  to install some dependencies before getting out hands with these codes.
+2.  You need to install some dependencies
 ```bashrc
 $ cd tensorflow-yolov3
 $ pip3 install -r ./docs/requirements.txt
@@ -25,6 +25,7 @@ $ python3 freeze_graph.py
 Then you will get some `.pb` files in the root path.
 
 4. Data Files
+<br>
 Two files are required as follows:
 
 - [`dataset.txt`](https://raw.githubusercontent.com/ashavish/tensorflow-yolov3/master/data/dataset/object_train.txt): 
