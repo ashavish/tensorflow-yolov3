@@ -83,5 +83,12 @@ $ python train.py
 $ python3 predict_image_rotated.py
 ```
 
+7. Improvements
+<br>
+This was trained with about 4000 images with image augmentation for around 50 epochs.
+Gave decent results. More training data can improve the results further.
+Another possible improvement to try out is including the rotation in the IOU computation.
+
+
 
 
