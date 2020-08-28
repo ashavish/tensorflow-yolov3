@@ -21,7 +21,9 @@ from tqdm import tqdm
 from core.dataset import Dataset
 from core.yolov3 import YOLOV3
 from core.config import cfg
-
+import sys
+import numpy as np
+import pickle
 
 class YoloTrain(object):
     def __init__(self):
@@ -56,10 +58,10 @@ class YoloTrain(object):
         with tf.name_scope("define_loss"):
             self.model = YOLOV3(self.input_data, self.trainable)
             self.net_var = tf.global_variables()
-            self.giou_loss, self.conf_loss, self.prob_loss = self.model.compute_loss(
+            self.giou_loss,self.theta_loss, self.conf_loss, self.prob_loss = self.model.compute_loss(
                                                     self.label_sbbox,  self.label_mbbox,  self.label_lbbox,
                                                     self.true_sbboxes, self.true_mbboxes, self.true_lbboxes)
-            self.loss = self.giou_loss + self.conf_loss + self.prob_loss
+            self.loss = self.giou_loss + self.conf_loss + self.prob_loss + self.theta_loss
 
         with tf.name_scope('learn_rate'):
             self.global_step = tf.Variable(1.0, dtype=tf.float64, trainable=False, name='global_step')
@@ -113,8 +115,8 @@ class YoloTrain(object):
             tf.summary.scalar("giou_loss",  self.giou_loss)
             tf.summary.scalar("conf_loss",  self.conf_loss)
             tf.summary.scalar("prob_loss",  self.prob_loss)
+            tf.summary.scalar("theta_loss", self.theta_loss)
             tf.summary.scalar("total_loss", self.loss)
-
             logdir = "./data/log/"
             if os.path.exists(logdir): shutil.rmtree(logdir)
             os.mkdir(logdir)

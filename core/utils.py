@@ -60,7 +60,7 @@ def image_preporcess(image, target_size, gt_boxes=None):
         return image_paded, gt_boxes
 
 
-def draw_bbox(image, bboxes, classes=read_class_names(cfg.YOLO.CLASSES), show_label=True):
+def draw_bbox_orig(image, bboxes, classes=read_class_names(cfg.YOLO.CLASSES), show_label=True):
     """
     bboxes: [x_min, y_min, x_max, y_max, probability, cls_id] format coordinates.
     """
@@ -89,6 +89,63 @@ def draw_bbox(image, bboxes, classes=read_class_names(cfg.YOLO.CLASSES), show_la
             bbox_mess = '%s: %.2f' % (classes[class_ind], score)
             t_size = cv2.getTextSize(bbox_mess, 0, fontScale, thickness=bbox_thick//2)[0]
             cv2.rectangle(image, c1, (c1[0] + t_size[0], c1[1] - t_size[1] - 3), bbox_color, -1)  # filled
+
+            cv2.putText(image, bbox_mess, (c1[0], c1[1]-2), cv2.FONT_HERSHEY_SIMPLEX,
+                        fontScale, (0, 0, 0), bbox_thick//2, lineType=cv2.LINE_AA)
+
+    return image
+
+def rotate(origin, point, angle):
+    x0, y0 = origin
+    x1, y1 = point
+    x2 = x0 + np.cos(angle)*(x1 - x0) - np.sin(angle)*(y1 - y0)
+    y2 = y0 - np.sin(angle)*(x1 - x0) - np.cos(angle)*(y1 - y0)
+    return x2, y2
+
+
+def draw_bbox(image, bboxes, classes=read_class_names(cfg.YOLO.CLASSES), show_label=True):
+    """
+    bboxes: [x_min, y_min, x_max, y_max, probability, cls_id] format coordinates.
+    """
+
+    num_classes = len(classes)
+    image_h, image_w, _ = image.shape
+    hsv_tuples = [(1.0 * x / num_classes, 1., 1.) for x in range(num_classes)]
+    colors = list(map(lambda x: colorsys.hsv_to_rgb(*x), hsv_tuples))
+    colors = list(map(lambda x: (int(x[0] * 255), int(x[1] * 255), int(x[2] * 255)), colors))
+
+    random.seed(0)
+    random.shuffle(colors)
+    random.seed(None)
+
+
+    for i, bbox in enumerate(bboxes):
+        coor = np.array(bbox[:4], dtype=np.int32)
+        fontScale = 0.5
+        theta = bbox[4]
+        #theta = 0.25
+        angle = theta
+        x_min = min(coor[0],coor[2])
+        y_min = min(coor[1],coor[3])
+        w = np.abs(coor[2] - coor[0])
+        h = np.abs(coor[3] - coor[1])
+        x0, y0 =  x_min + w/2, y_min + h/2
+        score = bbox[5]
+        class_ind = int(bbox[6])
+        bbox_color = colors[class_ind]
+        bbox_thick = int(0.6 * (image_h + image_w) / 600)
+        c1, c2,c3,c4 = [rotate((x0,y0),(coor[0], coor[1]),angle)], [rotate((x0,y0),(coor[2], coor[1]),angle)] , [rotate((x0,y0),(coor[2], coor[3]),angle)], [rotate((x0,y0),(coor[0], coor[3]),angle)]
+        pts = np.array([c1,c2,c3,c4],np.int32)
+        pts = pts.reshape((-1,1,2))
+        cv2.polylines(image,[pts],True,bbox_color)
+        #cv2.rectangle(image, c1, c2, bbox_color, bbox_thick)
+
+
+        if show_label:
+            bbox_mess = '%s: %.2f' % (classes[class_ind], score)
+            t_size = cv2.getTextSize(bbox_mess, 0, fontScale, thickness=bbox_thick//2)[0]
+            c1 = [int(c1[0][0]),int(c1[0][1])]
+            cv2.rectangle(image,(c1[0],c1[1]), (c1[0] + t_size[0], c1[1] - t_size[1] - 3), bbox_color, -1)  # filled
 
             cv2.putText(image, bbox_mess, (c1[0], c1[1]-2), cv2.FONT_HERSHEY_SIMPLEX,
                         fontScale, (0, 0, 0), bbox_thick//2, lineType=cv2.LINE_AA)
@@ -136,15 +193,15 @@ def nms(bboxes, iou_threshold, sigma=0.3, method='nms'):
     Note: soft-nms, https://arxiv.org/pdf/1704.04503.pdf
           https://github.com/bharatsingh430/soft-nms
     """
-    classes_in_img = list(set(bboxes[:, 5]))
+    classes_in_img = list(set(bboxes[:, 6]))
     best_bboxes = []
 
     for cls in classes_in_img:
-        cls_mask = (bboxes[:, 5] == cls)
+        cls_mask = (bboxes[:, 6] == cls)
         cls_bboxes = bboxes[cls_mask]
 
         while len(cls_bboxes) > 0:
-            max_ind = np.argmax(cls_bboxes[:, 4])
+            max_ind = np.argmax(cls_bboxes[:, 5])
             best_bbox = cls_bboxes[max_ind]
             best_bboxes.append(best_bbox)
             cls_bboxes = np.concatenate([cls_bboxes[: max_ind], cls_bboxes[max_ind + 1:]])
@@ -160,8 +217,8 @@ def nms(bboxes, iou_threshold, sigma=0.3, method='nms'):
             if method == 'soft-nms':
                 weight = np.exp(-(1.0 * iou ** 2 / sigma))
 
-            cls_bboxes[:, 4] = cls_bboxes[:, 4] * weight
-            score_mask = cls_bboxes[:, 4] > 0.
+            cls_bboxes[:, 5] = cls_bboxes[:, 5] * weight
+            score_mask = cls_bboxes[:, 5] > 0.
             cls_bboxes = cls_bboxes[score_mask]
 
     return best_bboxes
@@ -173,8 +230,9 @@ def postprocess_boxes(pred_bbox, org_img_shape, input_size, score_threshold):
     pred_bbox = np.array(pred_bbox)
 
     pred_xywh = pred_bbox[:, 0:4]
-    pred_conf = pred_bbox[:, 4]
-    pred_prob = pred_bbox[:, 5:]
+    pred_theta = pred_bbox[:, 4]
+    pred_conf = pred_bbox[:, 5]
+    pred_prob = pred_bbox[:, 6:]
 
     # # (1) (x, y, w, h) --> (xmin, ymin, xmax, ymax)
     pred_coor = np.concatenate([pred_xywh[:, :2] - pred_xywh[:, 2:] * 0.5,
@@ -204,9 +262,8 @@ def postprocess_boxes(pred_bbox, org_img_shape, input_size, score_threshold):
     scores = pred_conf * pred_prob[np.arange(len(pred_coor)), classes]
     score_mask = scores > score_threshold
     mask = np.logical_and(scale_mask, score_mask)
-    coors, scores, classes = pred_coor[mask], scores[mask], classes[mask]
-
-    return np.concatenate([coors, scores[:, np.newaxis], classes[:, np.newaxis]], axis=-1)
+    coors, theta, scores, classes = pred_coor[mask],pred_theta[mask], scores[mask], classes[mask]
+    return np.concatenate([coors, theta[:,np.newaxis], scores[:, np.newaxis], classes[:, np.newaxis]], axis=-1)
 
 
 
